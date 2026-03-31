@@ -224,6 +224,34 @@ Título y Descripción son copiados a estos Casos de Prueba.</p>";
 
 
 // ------------------------------------------------------------------------------------------
+$TLS_htmltext_title['workspaceImport'] = "Importar XML del Espacio de Trabajo"; 
+$TLS_htmltext['workspaceImport'] 			= "<h2>Propósito:</h2>
+<p>Importa requisitos, suites de prueba, casos de prueba y enlaces de trazabilidad requisito-caso de prueba desde un archivo XML de espacio de trabajo.</p>
+
+<h2>Para empezar:</h2>
+<ol>
+	<li>Selecciona o sube un archivo XML de espacio de trabajo en la sección <b>Cargar XML</b>.</li>
+	<li>Elige el modo de importación:
+		<ul>
+			<li><b>dry-run (solo validar)</b>: Valida la estructura XML y cuenta objetos sin crearlos.</li>
+			<li><b>execute (crear/actualizar)</b>: Crea o actualiza requisitos, suites de prueba, casos de prueba y enlaces.</li>
+		</ul>
+	</li>
+	<li>Haz clic en <b>Ejecutar Importación</b> para comenzar el proceso de importación.</li>
+	<li>Revisa los resultados de la importación para ver cuántos objetos fueron creados, actualizados o ignorados.</li>
+</ol>
+
+<h2>Alcance Compatible:</h2>
+<p>La importación de espacio de trabajo soporta:</p>
+<ul>
+	<li>Especificaciones de Requisitos (documentos)</li>
+	<li>Requisitos (dentro de especificaciones)</li>
+	<li>Suites de Prueba y Suites de Prueba anidadas</li>
+	<li>Casos de Prueba (dentro de suites de prueba)</li>
+	<li>Enlaces de trazabilidad Requisito-Caso de Prueba</li>
+</ul>";
+
+// ------------------------------------------------------------------------------------------
 $TLS_htmltext_title['printReqSpec'] = "Imprimir Especificación de Requisitos"; //printReq
 $TLS_htmltext['printReqSpec'] = "<h2>Propósito:</h2>
 <p>Desde aquí puedes imprimir un requisito, todos los requisitos de la especificación de requisitos,

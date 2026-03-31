@@ -213,6 +213,34 @@ com nome definido na configuração <i>(default is: \$tlCfg->req_cfg->default_te
 
 
 // ------------------------------------------------------------------------------------------
+$TLS_htmltext_title['workspaceImport'] = "Importar XML do Espaço de Trabalho";
+$TLS_htmltext['workspaceImport'] = "<h2>Propósito:</h2>
+<p>Importa requisitos, suítes de teste, casos de teste e liens de rastreabilidade requisito-caso de teste de um arquivo XML do espaço de trabalho.</p>
+
+<h2>Primeiros Passos:</h2>
+<ol>
+	<li>Selecione ou envie um arquivo XML do espaço de trabalho na seção <b>Upload XML</b>.</li>
+	<li>Escolha o modo de importação:
+		<ul>
+			<li><b>dry-run (validar apenas)</b>: Valida a estrutura XML e conta objetos sem criá-los.</li>
+			<li><b>execute (criar/atualizar)</b>: Cria ou atualiza requisitos, suítes de teste, casos de teste e liens.</li>
+		</ul>
+	</li>
+	<li>Clique em <b>Executar Importação</b> para iniciar o processo de importação.</li>
+	<li>Revise os resultados da importação para ver quantos objetos foram criados, atualizados ou ignorados.</li>
+</ol>
+
+<h2>Escopo Suportado:</h2>
+<p>A importação do espaço de trabalho suporta:</p>
+<ul>
+	<li>Especificações de Requisitos (documentos)</li>
+	<li>Requisitos (dentro de especificações)</li>
+	<li>Suítes de Teste e Suítes de Teste aninhadas</li>
+	<li>Casos de Teste (dentro de suítes de teste)</li>
+	<li>Enlaces de rastreabilidade Requisito-Caso de Teste</li>
+</ul>";
+
+// ------------------------------------------------------------------------------------------
 $TLS_htmltext_title['printReqSpec'] = "Imprimir documento de Especificação de Requisitos"; //printReq
 $TLS_htmltext['printReqSpec'] = "<h2>Objetivo:</h2>
 <p>Através desta opção você pode imprimir um requisito único, todos os requisitos de uma Especificação de Requisitos, 

@@ -234,6 +234,34 @@ konfigurierten Namen  <i>(Standard ist: \$tlCfg->req_cfg->default_testsuite_name
 werden in die Testfälle kopiert.</p>";
 
 // ------------------------------------------------------------------------------------------
+$TLS_htmltext_title['workspaceImport'] = "XML Workspace-Import"; 
+$TLS_htmltext['workspaceImport'] 		= "<h2>Zweck:</h2>
+<p>Importiert Anforderungen, Testsuites, Testfälle und Anforderung-Testfall-Nachverfolgungslinks aus einer XML-Workspace-Datei.</p>
+
+<h2>Erste Schritte:</h2>
+<ol>
+	<li>Wählen Sie eine XML-Datei im Abschnitt <b>XML hochladen</b> aus oder laden Sie sie hoch.</li>
+	<li>Wählen Sie den Importmodus:
+		<ul>
+			<li><b>dry-run (nur validieren)</b>: Validiert die XML-Struktur und zählt Objekte, ohne sie zu erstellen.</li>
+			<li><b>execute (erstellen/aktualisieren)</b>: Erstellt oder aktualisiert Anforderungen, Testsuites, Testfälle und Links.</li>
+		</ul>
+	</li>
+	<li>Klicken Sie auf <b>Import ausführen</b>, um den Importprozess zu starten.</li>
+	<li>Überprüfen Sie die Importergebnisse, um zu sehen, wie viele Objekte erstellt, aktualisiert oder übersprungen wurden.</li>
+</ol>
+
+<h2>Unterstützter Umfang:</h2>
+<p>Der Workspace-Import unterstützt:</p>
+<ul>
+	<li>Anforderungsspezifikationen (Dokumente)</li>
+	<li>Anforderungen (innerhalb von Spezifikationen)</li>
+	<li>Testsuites und verschachtelte Testsuites</li>
+	<li>Testfälle (innerhalb von Testsuites)</li>
+	<li>Nachverfolgungslinks für Anforderung-Testfall</li>
+</ul>";
+
+// ------------------------------------------------------------------------------------------
 $TLS_htmltext_title['printReqSpec'] = "Anforderungsspezifikation erstellen"; //printReq
 $TLS_htmltext['printReqSpec'] = "<h2>Zweck:</h2>
 <p>Hier können alle Anforderungen eines Test Projekts, einer Anforderungsspezifikation oder einzelne

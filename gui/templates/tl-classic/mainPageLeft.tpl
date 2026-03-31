@@ -154,6 +154,9 @@
        {if $gui->grants.reqs_view == "yes" 
            || $gui->grants.reqs_edit == "yes" }
           <a href="{$gui->launcher}?feature=reqSpecMgmt" class="list-group-item" style="{$aStyle}">{$labels.href_req_spec}</a>
+         {if $gui->grants.reqs_edit == "yes" && $gui->grants.modify_tc == "yes" && $gui->grants.req_tcase_link_management == "yes"}
+         <a href="{$gui->launcher}?feature=workspaceImport" class="list-group-item" style="{$aStyle}">Workspace Import XML</a>
+         {/if}
           <a href="{$reqOverView}" class="list-group-item" style="{$aStyle}">{$labels.href_req_overview}</a>
           <a href="{$gui->launcher}?feature=printReqSpec" class="list-group-item" style="{$aStyle}">{$labels.href_print_req}</a>
           <a href="{$gui->launcher}?feature=searchReq" class="list-group-item" style="{$aStyle}">{$labels.href_search_req}</a>

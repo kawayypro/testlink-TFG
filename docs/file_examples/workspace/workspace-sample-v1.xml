@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tl_workspace schemaVersion="1.0" producer="TFG-Generator" generatedAt="2026-03-31T12:00:00Z">
+  <metadata>
+    <workspaceKey>WS-DEMO-001</workspaceKey>
+    <workspaceName>Workspace Demo Import</workspaceName>
+  </metadata>
+
+  <requirements>
+    <requirement_spec specKey="REQ-SPEC-AUTH">
+      <title>Requisitos de Autenticacion</title>
+      <description>Conjunto de requisitos funcionales para login y sesion.</description>
+
+      <requirement reqKey="REQ-AUTH-001">
+        <docId>REQ-AUTH-001</docId>
+        <title>Login correcto con credenciales validas</title>
+        <description>El sistema debe permitir acceso cuando usuario y password son validos.</description>
+        <status>V</status>
+        <type>1</type>
+      </requirement>
+
+      <requirement reqKey="REQ-AUTH-002">
+        <docId>REQ-AUTH-002</docId>
+        <title>Bloqueo por intentos fallidos</title>
+        <description>Tras 5 intentos fallidos consecutivos, la cuenta queda bloqueada temporalmente.</description>
+        <status>V</status>
+        <type>1</type>
+      </requirement>
+
+      <requirement reqKey="REQ-AUTH-003">
+        <docId>REQ-AUTH-003</docId>
+        <title>Cierre de sesion invalida el token</title>
+        <description>Al cerrar sesion, el token de acceso deja de ser valido inmediatamente.</description>
+        <status>V</status>
+        <type>1</type>
+      </requirement>
+    </requirement_spec>
+
+    <requirement_spec specKey="REQ-SPEC-PROFILE">
+      <title>Requisitos de Perfil</title>
+      <description>Requisitos para visualizacion y actualizacion de perfil.</description>
+
+      <requirement reqKey="REQ-PRO-001">
+        <docId>REQ-PRO-001</docId>
+        <title>Visualizar datos de perfil</title>
+        <description>El usuario debe ver nombre, email y rol en su pantalla de perfil.</description>
+        <status>V</status>
+        <type>1</type>
+      </requirement>
+
+      <requirement reqKey="REQ-PRO-002">
+        <docId>REQ-PRO-002</docId>
+        <title>Actualizar telefono de contacto</title>
+        <description>El usuario debe poder actualizar su telefono y persistir el cambio.</description>
+        <status>V</status>
+        <type>1</type>
+      </requirement>
+    </requirement_spec>
+  </requirements>
+
+  <testspec>
+    <testsuite suiteKey="TS-AUTH" name="Autenticacion">
+      <details>Pruebas funcionales del flujo de autenticacion.</details>
+
+      <testcase caseKey="TC-AUTH-001" name="Login exitoso">
+        <summary>Validar acceso con credenciales correctas.</summary>
+        <preconditions>Usuario activo registrado en el sistema.</preconditions>
+        <execution_type>1</execution_type>
+        <importance>2</importance>
+
+        <steps>
+          <step step_number="1">
+            <actions>Abrir pantalla de login e introducir usuario y password validos.</actions>
+            <expectedresults>El formulario acepta los datos sin error.</expectedresults>
+          </step>
+          <step step_number="2">
+            <actions>Hacer click en Entrar.</actions>
+            <expectedresults>El usuario accede al dashboard y se crea sesion.</expectedresults>
+          </step>
+        </steps>
+
+        <requirement_links>
+          <requirement_ref reqKey="REQ-AUTH-001"/>
+        </requirement_links>
+      </testcase>
+
+      <testcase caseKey="TC-AUTH-002" name="Bloqueo tras intentos fallidos">
+        <summary>Validar bloqueo temporal de cuenta.</summary>
+        <preconditions>Usuario activo sin bloqueos previos.</preconditions>
+        <execution_type>1</execution_type>
+        <importance>3</importance>
+
+        <steps>
+          <step step_number="1">
+            <actions>Intentar login con password invalida 5 veces seguidas.</actions>
+            <expectedresults>Tras el quinto intento, la cuenta queda bloqueada.</expectedresults>
+          </step>
+          <step step_number="2">
+            <actions>Intentar login con credenciales correctas durante el bloqueo.</actions>
+            <expectedresults>El sistema rechaza acceso indicando bloqueo temporal.</expectedresults>
+          </step>
+        </steps>
+
+        <requirement_links>
+          <requirement_ref reqKey="REQ-AUTH-002"/>
+        </requirement_links>
+      </testcase>
+
+      <testsuite suiteKey="TS-AUTH-SESSION" name="Sesion">
+        <details>Pruebas de ciclo de vida de sesion.</details>
+
+        <testcase caseKey="TC-AUTH-003" name="Logout invalida token">
+          <summary>Validar invalidez de token al cerrar sesion.</summary>
+          <preconditions>Usuario autenticado con token activo.</preconditions>
+          <execution_type>1</execution_type>
+          <importance>2</importance>
+
+          <steps>
+            <step step_number="1">
+              <actions>Cerrar sesion desde el menu de usuario.</actions>
+              <expectedresults>El sistema redirige a login.</expectedresults>
+            </step>
+            <step step_number="2">
+              <actions>Intentar consumir endpoint protegido con el token anterior.</actions>
+              <expectedresults>La API responde no autorizado.</expectedresults>
+            </step>
+          </steps>
+
+          <requirement_links>
+            <requirement_ref reqKey="REQ-AUTH-003"/>
+          </requirement_links>
+        </testcase>
+      </testsuite>
+    </testsuite>
+
+    <testsuite suiteKey="TS-PROFILE" name="Perfil">
+      <details>Pruebas de consulta y actualizacion de perfil.</details>
+
+      <testcase caseKey="TC-PRO-001" name="Visualizar perfil">
+        <summary>Validar visualizacion de datos basicos de perfil.</summary>
+        <preconditions>Usuario autenticado.</preconditions>
+        <execution_type>1</execution_type>
+        <importance>2</importance>
+
+        <steps>
+          <step step_number="1">
+            <actions>Entrar a la pantalla de perfil.</actions>
+            <expectedresults>Se muestran nombre, email y rol del usuario.</expectedresults>
+          </step>
+        </steps>
+
+        <requirement_links>
+          <requirement_ref reqKey="REQ-PRO-001"/>
+        </requirement_links>
+      </testcase>
+
+      <testcase caseKey="TC-PRO-002" name="Actualizar telefono">
+        <summary>Validar guardado del telefono de contacto.</summary>
+        <preconditions>Usuario autenticado en pantalla de perfil.</preconditions>
+        <execution_type>1</execution_type>
+        <importance>2</importance>
+
+        <steps>
+          <step step_number="1">
+            <actions>Introducir un nuevo telefono valido y pulsar Guardar.</actions>
+            <expectedresults>Se muestra confirmacion de guardado correcto.</expectedresults>
+          </step>
+          <step step_number="2">
+            <actions>Recargar la pantalla de perfil.</actions>
+            <expectedresults>El nuevo telefono permanece almacenado.</expectedresults>
+          </step>
+        </steps>
+
+        <requirement_links>
+          <requirement_ref reqKey="REQ-PRO-002"/>
+        </requirement_links>
+      </testcase>
+    </testsuite>
+  </testspec>
+</tl_workspace>

@@ -213,6 +213,34 @@ avec un nom configuré de la sorte <i>(default is: \$tlCfg->req_cfg->default_tes
 
 
 // ------------------------------------------------------------------------------------------
+$TLS_htmltext_title['workspaceImport'] = "Importer XML Espace de Travail";
+$TLS_htmltext['workspaceImport'] = "<h2>Objectif :</h2>
+<p>Importez les exigences, les suites de tests, les cas de tests et les liens de traçabilité exigence-cas de test à partir d'un fichier XML d'espace de travail.</p>
+
+<h2>Pour commencer :</h2>
+<ol>
+	<li>Sélectionnez ou téléchargez un fichier XML d'espace de travail dans la section <b>Télécharger XML</b>.</li>
+	<li>Choisissez le mode d'importation :
+		<ul>
+			<li><b>dry-run (validation uniquement)</b> : Valide la structure XML et compte les objets sans les créer.</li>
+			<li><b>execute (créer/mettre à jour)</b> : Crée ou met à jour les exigences, suites de tests, cas de tests et liens.</li>
+		</ul>
+	</li>
+	<li>Cliquez sur <b>Exécuter l'importation</b> pour démarrer le processus d'importation.</li>
+	<li>Examinez les résultats de l'importation pour voir combien d'objets ont été créés, mis à jour ou ignorés.</li>
+</ol>
+
+<h2>Portée supportée :</h2>
+<p>L'importation d'espace de travail supporte :</p>
+<ul>
+	<li>Spécifications d'exigences (documents)</li>
+	<li>Exigences (au sein des spécifications)</li>
+	<li>Suites de tests et suites de tests imbriquées</li>
+	<li>Cas de tests (au sein des suites de tests)</li>
+	<li>Liens de traçabilité exigence-cas de test</li>
+</ul>";
+
+// ------------------------------------------------------------------------------------------
 $TLS_htmltext_title['printReqSpec'] = "Imprimer le dossier d'exigences"; //printReq
 $TLS_htmltext['printReqSpec'] = "<h2>Objectif :</h2>
 <p>Il est possible d'imprimer une seule exigence, toutes les exigences d'un dossier d'exigences, ou

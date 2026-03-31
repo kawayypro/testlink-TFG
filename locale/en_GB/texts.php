@@ -215,6 +215,34 @@ with name defined in configuration <i>(default is: \$tlCfg->req_cfg->default_tes
 
 
 // ------------------------------------------------------------------------------------------
+$TLS_htmltext_title['workspaceImport']	= "Workspace XML Import"; 
+$TLS_htmltext['workspaceImport'] 			= "<h2>Purpose:</h2>
+<p>Import requirements, test suites, test cases and requirement-testcase traceability links from an XML workspace file.</p>
+
+<h2>Getting Started:</h2>
+<ol>
+	<li>Select or upload an XML workspace file in the <b>Upload XML</b> section.</li>
+	<li>Choose the import mode:
+		<ul>
+			<li><b>dry-run (validate only)</b>: Validates the XML structure and counts objects without creating them.</li>
+			<li><b>execute (create/update)</b>: Creates or updates requirements, test suites, test cases and links.</li>
+		</ul>
+	</li>
+	<li>Click <b>Run Import</b> to start the import process.</li>
+	<li>Review the import results to see how many objects were created, updated, or skipped.</li>
+</ol>
+
+<h2>Supported XML Scope:</h2>
+<p>The workspace import supports:</p>
+<ul>
+	<li>Requirement Specifications (documents)</li>
+	<li>Requirements (within specifications)</li>
+	<li>Test Suites and nested Test Suites</li>
+	<li>Test Cases (within test suites)</li>
+	<li>Requirement-TestCase traceability links</li>
+</ul>";
+
+// ------------------------------------------------------------------------------------------
 $TLS_htmltext_title['printReqSpec'] = "Print Requirement Specification"; //printReq
 $TLS_htmltext['printReqSpec'] = "<h2>Purpose:</h2>
 <p>You can generate document with the requirements within a requirement specification,
