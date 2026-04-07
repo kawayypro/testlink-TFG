@@ -3,20 +3,22 @@
  * Workspace XML import (requirements + testspec + traceability)
  * Contract v1.0
  */
-require('../../config.inc.php');
-require_once('common.php');
-require_once('xml.inc.php');
+if (!defined('TL_WORKSPACE_IMPORT_TEST_MODE')) {
+  require('../../config.inc.php');
+  require_once('common.php');
+  require_once('xml.inc.php');
 
-testlinkInitPage($db,false,false,'checkRights');
+  testlinkInitPage($db,false,false,'checkRights');
 
-$args = ws_init_args();
-$report = null;
+  $args = ws_init_args();
+  $report = null;
 
-if ($args->doUpload) {
-  $report = ws_handle_upload_and_process($db, $args);
+  if ($args->doUpload) {
+    $report = ws_handle_upload_and_process($db, $args);
+  }
+
+  ws_render_page($args, $report);
 }
-
-ws_render_page($args, $report);
 
 
 function checkRights(&$db,&$user)
