@@ -10,6 +10,21 @@ if (!defined('TL_WORKSPACE_IMPORT_TEST_MODE')) {
 
   testlinkInitPage($db,false,false,'checkRights');
 
+  // Serve transformed XML for download (secure, session-scoped)
+  if (isset($_GET['ws_download']) && isset($_GET['file'])) {
+    $fname = basename((string)$_GET['file']);
+    $expected = session_id() . '-workspace-transformed.xml';
+    if ($fname === $expected) {
+      $path = TL_TEMP_PATH . $fname;
+      if (is_file($path)) {
+        header('Content-Type: application/xml; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $fname . '"');
+        readfile($path);
+        exit;
+      }
+    }
+  }
+
   $args = ws_init_args();
   $report = null;
 
@@ -18,6 +33,440 @@ if (!defined('TL_WORKSPACE_IMPORT_TEST_MODE')) {
   }
 
   ws_render_page($args, $report);
+}
+
+
+function ws_is_xmi_enterprise_architect($xml)
+{
+  if (!is_object($xml)) {
+    return false;
+  }
+  $root = ws_local_name($xml);
+  if (strtoupper($root) !== 'XMI') {
+    return false;
+  }
+  $hdr = $xml->xpath("/*[local-name()='XMI']/*[local-name()='header']/*[local-name()='documentation']/*[local-name()='exporter']");
+  if ($hdr && count($hdr) > 0) {
+    $exporter = (string)$hdr[0];
+    if (stripos($exporter, 'Enterprise Architect') !== false) {
+      return true;
+    }
+  }
+
+  // fallback: presence of UML:Model element
+  $models = $xml->xpath("//*[local-name()='Model']");
+  return ($models && count($models) > 0);
+}
+
+
+function ws_get_tagged_value($node, $tag)
+{
+  $set = $node->xpath(".//*[local-name()='TaggedValue' and @tag='" . $tag . "']");
+  if ($set && count($set) > 0) {
+    return (string)$set[0]['value'];
+  }
+  return '';
+}
+function ws_get_xmi_id($node)
+{
+  $dom = dom_import_simplexml($node);
+  if ($dom instanceof DOMElement) {
+    $id = (string)$dom->getAttribute('xmi.id');
+    if ($id === '') {
+      $id = (string)$dom->getAttribute('xmi:id');
+    }
+    if ($id === '') {
+      foreach ($dom->attributes as $attr) {
+        if ($attr->name !== 'name') {
+          $id = (string)$attr->value;
+          break;
+        }
+      }
+    }
+    return $id;
+  }
+  return '';
+}
+
+
+function ws_dom_get_xmi_id($domNode)
+{
+  if (!($domNode instanceof DOMElement)) {
+    return '';
+  }
+
+  $id = (string)$domNode->getAttribute('xmi.id');
+  if ($id === '') {
+    $id = (string)$domNode->getAttribute('xmi:id');
+  }
+  if ($id === '') {
+    foreach ($domNode->attributes as $attr) {
+      if ($attr->name !== 'name') {
+        $id = (string)$attr->value;
+        break;
+      }
+    }
+  }
+
+  return $id;
+}
+
+
+function ws_is_diagram_step_name($name)
+{
+  $name = trim((string)$name);
+  if ($name === '') {
+    return false;
+  }
+
+  $blacklist = array(
+    '/^(start|end|inicio|fin)$/i',
+    '/^(initial|final|decision|merge|note|text|connector|flow)$/i',
+    '/^(basicpath|alternative)$/i',
+  );
+
+  foreach ($blacklist as $pattern) {
+    if (preg_match($pattern, $name)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+
+function ws_collect_diagram_step_names($diagNode, $domXPath, $nodeNameById)
+{
+  $steps = array();
+  if (!$domXPath || !($diagNode instanceof DOMElement)) {
+    return $steps;
+  }
+
+  // EA exports can vary between DiagramElement, DiagramObject or namespace-specific wrappers.
+  // Scan all descendants and keep only nodes that look like actual diagram items.
+  $stepNodes = $domXPath->query(".//*", $diagNode);
+  if (!$stepNodes || $stepNodes->length === 0) {
+    return $steps;
+  }
+
+  foreach ($stepNodes as $stepNode) {
+    if (!($stepNode instanceof DOMElement)) continue;
+    $localName = $stepNode->localName;
+    if (in_array($localName, array('TaggedValue', 'Diagram', 'Model', 'XMI'), true)) {
+      continue;
+    }
+
+    $subjectId = $stepNode->getAttribute('subject');
+    if ($subjectId === '') {
+      $subjectId = $stepNode->getAttribute('element');
+    }
+
+    $candidateName = $stepNode->getAttribute('name');
+    if ($candidateName === '') {
+      $candidateName = $stepNode->getAttribute('label');
+    }
+
+    if ($candidateName === '' && $subjectId !== '' && isset($nodeNameById[$subjectId])) {
+      $candidateName = $nodeNameById[$subjectId];
+    }
+
+    if ($candidateName === '') {
+      $nameNodes = $domXPath->query(".//*[local-name()='name' or local-name()='Name']", $stepNode);
+      if ($nameNodes && $nameNodes->length > 0) {
+        $candidateName = trim($nameNodes->item(0)->textContent);
+      }
+    }
+
+    if ($candidateName === '' && $subjectId === '') {
+      continue;
+    }
+
+    $candidateName = trim($candidateName);
+    if (!ws_is_diagram_step_name($candidateName)) {
+      continue;
+    }
+
+    if (!in_array($candidateName, $steps, true)) {
+      $steps[] = $candidateName;
+    }
+  }
+
+  return $steps;
+}
+
+
+function ws_transform_xmi_to_tl_workspace($xmi, &$report)
+{
+  // Build a minimal tl_workspace document according to schema v1.0
+  $doc = new DOMDocument('1.0', 'UTF-8');
+  $doc->formatOutput = true;
+  $root = $doc->createElement('tl_workspace');
+  $root->setAttribute('schemaVersion', '1.0');
+  $doc->appendChild($root);
+
+  // Requirements container
+  $reqs = $doc->createElement('requirements');
+  $root->appendChild($reqs);
+
+  // Testspec container
+  $ts = $doc->createElement('testspec');
+  $root->appendChild($ts);
+
+  // 1) Extract UseCases -> requirements
+  // We'll prefer to build requirements from the DOM (when available) so reqKey values
+  // use the same xmi id format as other DOM-derived references (Dependencies).
+  $specEl = null;
+
+  // 2) Use DOMXPath for stable namespace-insensitive traversal
+  $domRoot = dom_import_simplexml($xmi);
+  $domDoc = $domRoot ? $domRoot->ownerDocument : null;
+  $domXPath = $domDoc ? new DOMXPath($domDoc) : null;
+
+  // Build xmi.id -> name map
+  $nodeNameById = array();
+  $requirementKeyByXmiId = array();
+  if ($domXPath) {
+    foreach ($domXPath->query("//*[local-name() and @name]") as $node) {
+      if (!($node instanceof DOMElement)) continue;
+      $nodeId = ws_dom_get_xmi_id($node);
+      $nodeName = $node->getAttribute('name');
+      if ($nodeId !== '' && $nodeName !== '') {
+        $nodeNameById[$nodeId] = $nodeName;
+      }
+    }
+    // Collect dependency suppliers so we can prefer supplier id values as requirement keys
+    $dependencySuppliers = array();
+    foreach ($domXPath->query("//*[local-name()='Dependency']") as $depNodeTmp) {
+      if (!($depNodeTmp instanceof DOMElement)) continue;
+      $s = $depNodeTmp->getAttribute('supplier');
+      if ($s !== '') $dependencySuppliers[$s] = true;
+    }
+
+    // Build requirements from UseCase DOM nodes so reqKey values match DOM references
+    $ucNodes = $domXPath->query("//*[local-name()='UseCase']");
+    if ($ucNodes && $ucNodes->length > 0) {
+      $specEl = $doc->createElement('requirement_spec');
+      $specEl->setAttribute('specKey', 'spec_sofia_rf');
+      $specEl->appendChild($doc->createElement('title', 'SofIA Requirements'));
+      $specEl->appendChild($doc->createElement('description', 'Extracted from Enterprise Architect SofIA project'));
+      $reqs->appendChild($specEl);
+
+      foreach ($ucNodes as $ucNode) {
+        if (!($ucNode instanceof DOMElement)) continue;
+        // Try several ways to obtain an identifier for this UseCase
+        $ucId = ws_dom_get_xmi_id($ucNode);
+        $ucName = $ucNode->getAttribute('name');
+        if ($ucName === '') continue;
+        // If one of the attribute values matches a dependency supplier, prefer that
+        foreach ($ucNode->attributes as $a) {
+          $val = (string)$a->value;
+          if ($val !== '' && isset($dependencySuppliers[$val])) {
+            $ucId = $val;
+            break;
+          }
+        }
+        if ($ucId === '') $ucId = uniqid('rf_');
+
+        $reqEl = $doc->createElement('requirement');
+        $reqEl->setAttribute('reqKey', $ucId);
+        $reqEl->appendChild($doc->createElement('docId', htmlspecialchars($ucName)));
+        $reqEl->appendChild($doc->createElement('title', htmlspecialchars($ucName)));
+        $docNodes = $domXPath->query(".//*[local-name()='TaggedValue' and @tag='documentation']", $ucNode);
+        $desc = '';
+        if ($docNodes && $docNodes->length > 0) {
+          $desc = $docNodes->item(0)->getAttribute('value');
+        }
+        $reqEl->appendChild($doc->createElement('description', htmlspecialchars($desc)));
+        $reqEl->appendChild($doc->createElement('status', TL_REQ_STATUS_VALID));
+        $reqEl->appendChild($doc->createElement('type', '1'));
+        $specEl->appendChild($reqEl);
+        $report->metrics->requirementsDetected++;
+        // Map any id-like attribute values to this requirement key so dependencies
+        // referencing different id syntaxes (xmi:id, EAID_..., etc.) can be resolved.
+        foreach ($ucNode->attributes as $a) {
+          $val = (string)$a->value;
+          if ($val !== '') {
+            $requirementKeyByXmiId[$val] = $ucId;
+          }
+        }
+      }
+    }
+  }
+
+  // Build Test -> UseCase map from Dependencies where source type is Test
+  $testToUsecase = array();
+  if ($domXPath) {
+    foreach ($domXPath->query("//*[local-name()='Dependency']") as $depNode) {
+      if (!($depNode instanceof DOMElement)) continue;
+      $isTest = $domXPath->query(".//*[local-name()='TaggedValue' and @tag='ea_sourceType' and @value='Test']", $depNode);
+      if ($isTest && $isTest->length > 0) {
+        $client = $depNode->getAttribute('client');
+        $supplier = $depNode->getAttribute('supplier');
+        if ($client !== '' && $supplier !== '') {
+          $testToUsecase[$client] = $supplier;
+        }
+      }
+    }
+  }
+
+  // Collect all ActivityDiagram nodes once
+  $diagrams = array();
+  if ($domXPath) {
+    foreach ($domXPath->query("//*[local-name()='Diagram' and @diagramType='ActivityDiagram']") as $diagNode) {
+      if ($diagNode instanceof DOMElement) {
+        $diagrams[] = $diagNode;
+      }
+    }
+  }
+
+  // Build testsuites and testcases directly from the diagram parent linkage
+  foreach ($testToUsecase as $testId => $ucId) {
+    $ucName = isset($nodeNameById[$ucId]) ? $nodeNameById[$ucId] : ('UseCase ' . $ucId);
+
+    $suiteKey = 'suite_' . preg_replace('/[^a-z0-9]/i', '_', $ucName);
+    $suite = $doc->createElement('testsuite');
+    $suite->setAttribute('suiteKey', $suiteKey);
+    $suite->setAttribute('name', htmlspecialchars($ucName));
+    $suite->appendChild($doc->createElement('details', 'Test cases for ' . htmlspecialchars($ucName)));
+    $ts->appendChild($suite);
+
+    foreach ($diagrams as $diagNode) {
+      $dName = $diagNode->getAttribute('name');
+      if (stripos($dName, 'BasicPath') === false && stripos($dName, 'Alternative') === false) {
+        continue;
+      }
+
+      $parentId = '';
+      if ($domXPath) {
+        $parentTag = $domXPath->query(".//*[local-name()='TaggedValue' and @tag='parent']", $diagNode);
+        if ($parentTag && $parentTag->length > 0) {
+          $parentId = $parentTag->item(0)->getAttribute('value');
+        }
+      }
+
+      if ($parentId !== $testId) {
+        continue;
+      }
+
+      $caseKey = uniqid('tc_');
+      $tcase = $doc->createElement('testcase');
+      $tcase->setAttribute('caseKey', $caseKey);
+      $tcase->setAttribute('name', htmlspecialchars($dName));
+      $tcase->appendChild($doc->createElement('summary', htmlspecialchars($dName)));
+      $tcase->appendChild($doc->createElement('preconditions', ''));
+      $tcase->appendChild($doc->createElement('execution_type', '1'));
+      $tcase->appendChild($doc->createElement('importance', '2'));
+
+      $stepsEl = $doc->createElement('steps');
+      $stepNames = ws_collect_diagram_step_names($diagNode, $domXPath, $nodeNameById);
+
+      if (count($stepNames) === 0) {
+        $stepNames = array('Execute path: ' . $dName);
+      }
+
+      foreach ($stepNames as $idx => $stepName) {
+        $stepEl = $doc->createElement('step');
+        $stepEl->setAttribute('step_number', (string)($idx + 1));
+        $stepEl->appendChild($doc->createElement('actions', htmlspecialchars($stepName)));
+        $stepEl->appendChild($doc->createElement('expectedresults', htmlspecialchars('Se completa correctamente: ' . $stepName)));
+        $stepsEl->appendChild($stepEl);
+      }
+      $tcase->appendChild($stepsEl);
+
+      $suite->appendChild($tcase);
+      $report->metrics->testcasesDetected++;
+
+      // Add requirement link inside the testcase so import validator picks it up
+      $rLinksEl = $doc->createElement('requirement_links');
+      $refEl = $doc->createElement('requirement_ref');
+      // Resolve the reqKey: prefer mapping from attribute values to requirement keys
+      $mappedReqKey = isset($requirementKeyByXmiId[$ucId]) ? $requirementKeyByXmiId[$ucId] : $ucId;
+      $refEl->setAttribute('reqKey', $mappedReqKey);
+      $rLinksEl->appendChild($refEl);
+      $tcase->appendChild($rLinksEl);
+      // Track trace/link count in the report metrics
+      $report->metrics->traceLinksDetected++;
+    }
+  }
+
+  // Reconcile requirement_ref entries: if they reference XMI ids (supplier values),
+  // replace them with the actual requirement reqKey generated above.
+  $reqMapByDocId = array();
+  foreach ($doc->getElementsByTagName('requirement') as $rEl) {
+    $docIdNode = $rEl->getElementsByTagName('docId')->item(0);
+    $docId = $docIdNode ? trim($docIdNode->textContent) : '';
+    if ($docId !== '') {
+      $reqMapByDocId[$docId] = $rEl->getAttribute('reqKey');
+    }
+  }
+
+  // For each requirement_ref, if the current reqKey points to an XMI id and we can
+  // resolve a requirement by docId using nodeNameById map, update it to the real reqKey.
+  $refNodes = $doc->getElementsByTagName('requirement_ref');
+  foreach ($refNodes as $ref) {
+    $cur = $ref->getAttribute('reqKey');
+    if ($cur === '') continue;
+    // If we have a mapping from XMI id -> name, try to resolve
+    if (isset($nodeNameById[$cur])) {
+      $docId = $nodeNameById[$cur];
+      if (isset($reqMapByDocId[$docId])) {
+        $ref->setAttribute('reqKey', $reqMapByDocId[$docId]);
+        continue;
+      }
+    }
+    // Fallback: search UseCase nodes in original DOM for a matching attribute value
+    if ($domXPath) {
+      $foundName = '';
+      foreach ($domXPath->query("//*[local-name()='UseCase']") as $ucn) {
+        if (!($ucn instanceof DOMElement)) continue;
+        foreach ($ucn->attributes as $a) {
+          if ((string)$a->value === $cur) {
+            $foundName = $ucn->getAttribute('name');
+            break 2;
+          }
+        }
+      }
+      if ($foundName !== '' && isset($reqMapByDocId[$foundName])) {
+        $ref->setAttribute('reqKey', $reqMapByDocId[$foundName]);
+      }
+    }
+  }
+
+  return $doc->saveXML();
+}
+
+
+function ws_summarize_xmi($xmi)
+{
+  $summary = array();
+  $pkgs = $xmi->xpath("//*[local-name()='Package']");
+  $summary['packages'] = $pkgs ? count($pkgs) : 0;
+  $pkgNames = array();
+  if ($pkgs) {
+    foreach ($pkgs as $p) {
+      $n = (string)$p['name'];
+      if ($n !== '') $pkgNames[] = $n;
+    }
+  }
+  $summary['package_names'] = array_slice($pkgNames, 0, 20);
+
+  $classes = $xmi->xpath("//*[local-name()='Class']");
+  $summary['classes'] = $classes ? count($classes) : 0;
+
+  $roles = $xmi->xpath("//*[local-name()='ClassifierRole']");
+  $summary['classifier_roles'] = $roles ? count($roles) : 0;
+
+  $trans = $xmi->xpath("//*[local-name()='Transition']");
+  $summary['transitions'] = $trans ? count($trans) : 0;
+
+  $act = $xmi->xpath("//*[local-name()='ActivityModel']");
+  $summary['activity_models'] = $act ? count($act) : 0;
+
+  // exporter info
+  $hdr = $xmi->xpath("/*[local-name()='XMI']/*[local-name()='header']/*[local-name()='documentation']/*[local-name()='exporter']");
+  $summary['exporter'] = ($hdr && count($hdr) > 0) ? (string)$hdr[0] : '';
+
+  return $summary;
 }
 
 
@@ -38,7 +487,7 @@ function ws_init_args()
 
   $args->doUpload = isset($request['UploadFile']) ? 1 : 0;
   $args->mode = isset($request['mode']) ? trim($request['mode']) : 'dry-run';
-  if ($args->mode !== 'execute') {
+  if (!in_array($args->mode, array('execute','dry-run','transform'), true)) {
     $args->mode = 'dry-run';
   }
 
@@ -82,6 +531,46 @@ function ws_handle_upload_and_process(&$db, $args)
   $xml = @simplexml_load_file_wrapper($dest);
   if ($xml === FALSE) {
     ws_add_issue($report, 'WSP-005', 'ERROR', '/', 'XML is not well formed or could not be parsed.');
+    @unlink($dest);
+    return $report;
+  }
+
+  // Special mode: transform XMI (Enterprise Architect) -> tl_workspace XML
+  if ($args->mode === 'transform') {
+    if (!ws_is_xmi_enterprise_architect($xml)) {
+      ws_add_issue($report, 'WSP-010', 'ERROR', '/', 'Uploaded file is not a recognized Enterprise Architect XMI.');
+      @unlink($dest);
+      return $report;
+    }
+
+    // keep original content for preview
+    $origContent = @file_get_contents($dest);
+    $report->originalXml = $origContent;
+    $report->originalSummary = ws_summarize_xmi($xml);
+
+    $generated = ws_transform_xmi_to_tl_workspace($xml, $report);
+    if ($generated === null) {
+      @unlink($dest);
+      return $report;
+    }
+
+    // store generated XML to temp for download
+    $outName = session_id() . '-workspace-transformed.xml';
+    $outPath = TL_TEMP_PATH . $outName;
+    @file_put_contents($outPath, $generated);
+    $report->generatedXml = $generated;
+    $report->generatedFileName = $outName;
+    $report->status = 'transformed';
+    // produce transformed summary (counts of key nodes)
+    $gdoc = new DOMDocument();
+    if (@$gdoc->loadXML($generated)) {
+      $report->transformedSummary = array(
+        'requirement_specs' => $gdoc->getElementsByTagName('requirement_spec')->length,
+        'requirements' => $gdoc->getElementsByTagName('requirement')->length,
+        'testsuites' => $gdoc->getElementsByTagName('testsuite')->length,
+        'testcases' => $gdoc->getElementsByTagName('testcase')->length,
+      );
+    }
     @unlink($dest);
     return $report;
   }
@@ -1030,6 +1519,13 @@ function ws_new_report($mode, $tprojectId)
   $report->metrics->traceabilityLinked = 0;
   $report->metrics->traceabilityFailed = 0;
 
+  // For transform mode: place to hold produced XML and filename
+  $report->generatedXml = null;
+  $report->generatedFileName = null;
+  $report->originalXml = null;
+  $report->originalSummary = null;
+  $report->transformedSummary = null;
+
   return $report;
 }
 
@@ -1073,7 +1569,7 @@ function ws_render_page($args, $report)
 
   echo '<h2>Workspace XML Import (v1.0)</h2>';
   echo '<p class="hint">Project: <strong>' . htmlspecialchars($args->tproject_name) . '</strong> (ID ' . intval($args->tproject_id) . ')</p>';
-  echo '<p class="hint">Supported scope: requirements + testsuites/testcases + requirement links.</p>';
+  echo '<p class="hint">Supported scope: Enterprise Architect XMI -> requirements, testsuites, testcases, steps and requirement links.</p>';
 
   echo '<form method="post" enctype="multipart/form-data" action="' . htmlspecialchars($self) . '">';
   echo '<fieldset>';
@@ -1085,6 +1581,7 @@ function ws_render_page($args, $report)
   echo '<select name="mode">';
   echo '<option value="dry-run"' . ($args->mode === 'dry-run' ? ' selected' : '') . '>dry-run (validate only)</option>';
   echo '<option value="execute"' . ($args->mode === 'execute' ? ' selected' : '') . '>execute (persist changes)</option>';
+  echo '<option value="transform"' . ($args->mode === 'transform' ? ' selected' : '') . '>transform (Enterprise Architect XMI → tl_workspace XML)</option>';
   echo '</select>';
 
   echo '<p class="hint">Max file size: ' . $maxKB . ' KB</p>';
@@ -1095,6 +1592,34 @@ function ws_render_page($args, $report)
   if (!is_null($report)) {
     echo '<h3>Import Report</h3>';
     echo '<pre>' . htmlspecialchars(json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)) . '</pre>';
+
+    if (!is_null($report->generatedXml)) {
+      // Show original XMI preview and summary
+      echo '<h4>Original (XMI) - Preview</h4>';
+      if (!empty($report->originalSummary)) {
+        echo '<p class="hint"><strong>XMI exporter:</strong> ' . htmlspecialchars($report->originalSummary['exporter']) . '</p>';
+        echo '<p class="hint"><strong>Packages:</strong> ' . intval($report->originalSummary['packages']) . ' &nbsp; <strong>Classes:</strong> ' . intval($report->originalSummary['classes']) . ' &nbsp; <strong>Transitions:</strong> ' . intval($report->originalSummary['transitions']) . '</p>';
+        if (!empty($report->originalSummary['package_names'])) {
+          echo '<p class="hint"><strong>Package names (sample):</strong> ' . htmlspecialchars(implode(', ', $report->originalSummary['package_names'])) . '</p>';
+        }
+      }
+      if (!empty($report->originalXml)) {
+        echo '<details><summary>Ver XMI original</summary><pre>' . htmlspecialchars($report->originalXml) . '</pre></details>';
+      }
+
+      // Show transformed summary and preview
+      $dl = htmlspecialchars($self . '?ws_download=1&file=' . urlencode($report->generatedFileName));
+      $downloadName = htmlspecialchars($report->generatedFileName);
+      echo '<h4>Transformed (tl_workspace) - Preview</h4>';
+      if (!empty($report->transformedSummary)) {
+        echo '<p class="hint"><strong>Requirement specs:</strong> ' . intval($report->transformedSummary['requirement_specs']) . ' &nbsp; <strong>Requirements:</strong> ' . intval($report->transformedSummary['requirements']) . '</p>';
+        echo '<p class="hint"><strong>Testsuites:</strong> ' . intval($report->transformedSummary['testsuites']) . ' &nbsp; <strong>Testcases:</strong> ' . intval($report->transformedSummary['testcases']) . '</p>';
+      }
+      echo '<p class="hint">XML transformado correctamente. El botón abre el selector nativo de guardado cuando el navegador lo permite.</p>';
+      echo '<p class="hint"><button type="button" id="ws-save-file-btn" data-download-url="' . $dl . '" data-download-name="' . $downloadName . '">Descargar XML y elegir ubicación</button> <a href="' . $dl . '">Descargar XML transformado</a></p>';
+      echo '<script>(function(){var btn=document.getElementById("ws-save-file-btn");if(!btn)return;btn.addEventListener("click",async function(){var url=btn.getAttribute("data-download-url");var name=btn.getAttribute("data-download-name")||"workspace-transformed.xml";if(!window.showSaveFilePicker){window.location.href=url;return;}try{var resp=await fetch(url,{credentials:"same-origin"});if(!resp.ok)throw new Error("download failed");var blob=await resp.blob();var handle=await window.showSaveFilePicker({suggestedName:name,types:[{description:"XML",accept:{"application/xml":[".xml"],"text/xml":[".xml"]}}]});var writable=await handle.createWritable();await writable.write(blob);await writable.close();}catch(e){window.location.href=url;}});})();</script>';
+      echo '<details><summary>Ver XML transformado</summary><pre>' . htmlspecialchars($report->generatedXml) . '</pre></details>';
+    }
   }
 
   echo '</body></html>';

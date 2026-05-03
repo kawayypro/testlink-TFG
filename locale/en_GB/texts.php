@@ -217,30 +217,33 @@ with name defined in configuration <i>(default is: \$tlCfg->req_cfg->default_tes
 // ------------------------------------------------------------------------------------------
 $TLS_htmltext_title['workspaceImport']	= "Workspace XML Import"; 
 $TLS_htmltext['workspaceImport'] 			= "<h2>Purpose:</h2>
-<p>Import requirements, test suites, test cases and requirement-testcase traceability links from an XML workspace file.</p>
+<p>This screen imports an Enterprise Architect XMI model into TestLink or transforms it into the <i>tl_workspace</i> XML format before download.</p>
+<p>Depending on the selected mode, the import can validate the file, generate a workspace XML, or persist requirements, test suites, test cases, steps, and requirement-test case links in the current test project.</p>
 
 <h2>Getting Started:</h2>
 <ol>
-	<li>Select or upload an XML workspace file in the <b>Upload XML</b> section.</li>
-	<li>Choose the import mode:
-		<ul>
-			<li><b>dry-run (validate only)</b>: Validates the XML structure and counts objects without creating them.</li>
-			<li><b>execute (create/update)</b>: Creates or updates requirements, test suites, test cases and links.</li>
-		</ul>
-	</li>
-	<li>Click <b>Run Import</b> to start the import process.</li>
-	<li>Review the import results to see how many objects were created, updated, or skipped.</li>
+	<li>Select or upload an XML/XMI file in the <b>Upload XML</b> section.</li>
+	<li>Choose the import mode:</li>
+	<ul>
+		<li><b>dry-run (validate only)</b>: checks the XML structure and workspace schema, and reports the detected objects without creating them.</li>
+		<li><b>transform (EA XMI → tl_workspace XML)</b>: extracts requirements, test suites, test cases, test steps, and requirement links, then lets you download the generated workspace file.</li>
+		<li><b>execute (create/update)</b>: validates the workspace XML and creates or updates requirements, test suites, test cases, and coverage links in TestLink.</li>
+	</ul>
+	<li>Click <b>Run Import</b> to start the selected process.</li>
+	<li>Review the import results to see how many objects were detected, created, updated, or skipped.</li>
 </ol>
 
 <h2>Supported XML Scope:</h2>
 <p>The workspace import supports:</p>
 <ul>
+	<li>Enterprise Architect XMI models</li>
 	<li>Requirement Specifications (documents)</li>
 	<li>Requirements (within specifications)</li>
 	<li>Test Suites and nested Test Suites</li>
-	<li>Test Cases (within test suites)</li>
+	<li>Test Cases and steps (within test suites)</li>
 	<li>Requirement-TestCase traceability links</li>
-</ul>";
+</ul>
+<p>When using <b>transform</b>, the generated XML can be downloaded with the browser save dialog when the browser supports it; otherwise the standard download link is available.</p>";
 
 // ------------------------------------------------------------------------------------------
 $TLS_htmltext_title['printReqSpec'] = "Print Requirement Specification"; //printReq

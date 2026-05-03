@@ -164,11 +164,46 @@ function ws_test_validate_and_build_model_detects_missing_req_key_reference()
   ws_assert_equals('TR5-002', $report->issues[0]['code'], 'error code should match missing reqKey reference');
 }
 
+function ws_test_transform_extracts_steps_from_diagram_elements()
+{
+  $xml = @simplexml_load_string(
+    '<XMI>'
+      . '<Model>'
+      . '<UseCase xmi:id="UC1" name="RF-01">'
+      . '<TaggedValue tag="documentation" value="Desc RF-01"/>'
+      . '</UseCase>'
+      . '<Test xmi:id="T1" name="Test 1"/>'
+      . '<Dependency client="T1" supplier="UC1">'
+      . '<TaggedValue tag="ea_sourceType" value="Test"/>'
+      . '</Dependency>'
+      . '<ActionState xmi:id="A1" name="Abrir pantalla de login e introducir usuario y password validos."/>'
+      . '<ActionState xmi:id="A2" name="Hacer click en Entrar."/>'
+      . '<Diagram xmi:id="D1" name="0 BasicPath" diagramType="ActivityDiagram">'
+      . '<TaggedValue tag="parent" value="T1"/>'
+      . '<DiagramElement subject="A1"/>'
+      . '<DiagramElement subject="A2"/>'
+      . '</Diagram>'
+      . '</Model>'
+      . '</XMI>'
+  );
+
+  $report = ws_new_report('transform', 1);
+  $generated = ws_transform_xmi_to_tl_workspace($xml, $report);
+  $gdoc = new DOMDocument();
+  $loaded = @$gdoc->loadXML($generated);
+
+  ws_assert_true($loaded === true, 'generated XML should be well formed');
+  ws_assert_equals(2, $gdoc->getElementsByTagName('step')->length, 'two steps should be extracted from diagram elements');
+  ws_assert_equals(2, $gdoc->getElementsByTagName('actions')->length, 'each extracted step should have actions');
+  ws_assert_equals(1, $gdoc->getElementsByTagName('requirement_ref')->length, 'requirement link should still be present');
+}
+
 ws_test_append_html_marker();
 ws_test_new_report_and_issue_tracking();
 ws_test_req_type_validation();
 ws_test_validate_and_build_model_minimal_valid_xml();
 ws_test_validate_and_build_model_detects_missing_req_key_reference();
+ws_test_transform_extracts_steps_from_diagram_elements();
 
 if (count($__ws_test_failures) > 0) {
   echo "FAILED: " . count($__ws_test_failures) . " of " . $__ws_test_count . " assertions failed.\n";
