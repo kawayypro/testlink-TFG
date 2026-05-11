@@ -522,6 +522,13 @@ function ws_handle_upload_and_process(&$db, $args)
     return $report;
   }
 
+  $originalName = isset($fInfo['name']) ? basename((string)$fInfo['name']) : '';
+  $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+  if (!in_array($extension, array('xml', 'xmi'), true)) {
+    ws_add_issue($report, 'WSP-054', 'ERROR', '/', 'The uploaded file must have a .xml or .xmi extension.');
+    return $report;
+  }
+
   $dest = TL_TEMP_PATH . session_id() . '-workspace-import.xml';
   if (!move_uploaded_file($source, $dest)) {
     ws_add_issue($report, 'WSP-053', 'ERROR', '/', 'Could not move uploaded file to temp folder.');
@@ -1574,8 +1581,8 @@ function ws_render_page($args, $report)
   echo '<form method="post" enctype="multipart/form-data" action="' . htmlspecialchars($self) . '">';
   echo '<fieldset>';
   echo '<legend>Upload XML</legend>';
-  echo '<label>XML file</label>';
-  echo '<input type="file" name="uploadedFile" accept=".xml,text/xml,application/xml" required>';
+  echo '<label>XML/XMI file</label>';
+  echo '<input type="file" name="uploadedFile" accept=".xml,.xmi,text/xml,application/xml" required>';
 
   echo '<label>Mode</label>';
   echo '<select name="mode">';
@@ -1591,22 +1598,26 @@ function ws_render_page($args, $report)
 
   if (!is_null($report)) {
     echo '<h3>Import Report</h3>';
-    echo '<pre>' . htmlspecialchars(json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)) . '</pre>';
+    echo '<p class="hint"><strong>Status:</strong> ' . htmlspecialchars(isset($report->status) ? $report->status : 'n/a') . '</p>';
+    echo '<p class="hint"><strong>Detected:</strong> requirements ' . intval($report->metrics->requirementsDetected) . ' &nbsp; testsuites ' . intval($report->metrics->suitesDetected) . ' &nbsp; testcases ' . intval($report->metrics->testcasesDetected) . ' &nbsp; trace links ' . intval($report->metrics->traceLinksDetected) . '</p>';
+    echo '<p class="hint"><strong>Created/updated:</strong> requirement specs ' . intval($report->metrics->requirementSpecsCreated + $report->metrics->requirementSpecsUpdated) . ' &nbsp; requirements ' . intval($report->metrics->requirementsCreated + $report->metrics->requirementsUpdated) . ' &nbsp; suites ' . intval($report->metrics->suitesCreated + $report->metrics->suitesUpdated) . ' &nbsp; testcases ' . intval($report->metrics->testcasesCreated + $report->metrics->testcasesUpdated) . ' &nbsp; linked traceability ' . intval($report->metrics->traceabilityLinked) . '</p>';
+    echo '<p class="hint"><strong>Warnings/Errors:</strong> ' . intval($report->totalsBySeverity['WARN']) . ' warnings, ' . intval($report->totalsBySeverity['ERROR']) . ' errors</p>';
 
-    if (!is_null($report->generatedXml)) {
-      // Show original XMI preview and summary
-      echo '<h4>Original (XMI) - Preview</h4>';
-      if (!empty($report->originalSummary)) {
-        echo '<p class="hint"><strong>XMI exporter:</strong> ' . htmlspecialchars($report->originalSummary['exporter']) . '</p>';
-        echo '<p class="hint"><strong>Packages:</strong> ' . intval($report->originalSummary['packages']) . ' &nbsp; <strong>Classes:</strong> ' . intval($report->originalSummary['classes']) . ' &nbsp; <strong>Transitions:</strong> ' . intval($report->originalSummary['transitions']) . '</p>';
-        if (!empty($report->originalSummary['package_names'])) {
-          echo '<p class="hint"><strong>Package names (sample):</strong> ' . htmlspecialchars(implode(', ', $report->originalSummary['package_names'])) . '</p>';
+    if (intval($report->totalsBySeverity['ERROR']) > 0) {
+      $friendlyMessage = 'El archivo no se ha podido procesar porque el formato no es el esperado.';
+      foreach ($report->issues as $issue) {
+        if (!isset($issue['severity']) || $issue['severity'] !== 'ERROR') {
+          continue;
+        }
+        if (isset($issue['code']) && $issue['code'] === 'WSP-054') {
+          $friendlyMessage = 'El formato del archivo no es el esperado. Sube un archivo .xml válido.';
+          break;
         }
       }
-      if (!empty($report->originalXml)) {
-        echo '<details><summary>Ver XMI original</summary><pre>' . htmlspecialchars($report->originalXml) . '</pre></details>';
-      }
+      echo '<p class="hint" style="color:#8a1f11;font-weight:bold;">' . htmlspecialchars($friendlyMessage) . '</p>';
+    }
 
+    if (!is_null($report->generatedXml)) {
       // Show transformed summary and preview
       $dl = htmlspecialchars($self . '?ws_download=1&file=' . urlencode($report->generatedFileName));
       $downloadName = htmlspecialchars($report->generatedFileName);
