@@ -78,6 +78,16 @@ function ws_test_req_type_validation()
   ws_assert_true(ws_req_type_valid('abc') === false, 'non numeric value should be rejected');
 }
 
+function ws_test_requirement_doc_id_is_normalized()
+{
+  $longDocId = 'REQ-ABCDEFGHIJKLMNOPQRSTUVWXYZ-1234567890';
+  $normalized = ws_normalize_requirement_doc_id($longDocId);
+  $expected = substr(trim($longDocId), 0, 32);
+
+  ws_assert_true(strlen($normalized) <= 32, 'normalized requirement docId should fit configured field size');
+  ws_assert_equals($expected, $normalized, 'normalization should match storage trimming');
+}
+
 function ws_test_validate_and_build_model_minimal_valid_xml()
 {
   $xml = simplexml_load_string(
@@ -201,6 +211,7 @@ function ws_test_transform_extracts_steps_from_diagram_elements()
 ws_test_append_html_marker();
 ws_test_new_report_and_issue_tracking();
 ws_test_req_type_validation();
+ws_test_requirement_doc_id_is_normalized();
 ws_test_validate_and_build_model_minimal_valid_xml();
 ws_test_validate_and_build_model_detects_missing_req_key_reference();
 ws_test_transform_extracts_steps_from_diagram_elements();

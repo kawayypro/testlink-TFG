@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 /**
  * Workspace XML import (requirements + testspec + traceability)
  * Contract v1.0
@@ -86,6 +86,25 @@ function ws_get_xmi_id($node)
     return $id;
   }
   return '';
+}
+
+
+function ws_normalize_requirement_doc_id($docId)
+{
+  $maxLen = 32;
+  if (function_exists('config_get')) {
+    $fieldSize = config_get('field_size');
+    if (is_object($fieldSize) && isset($fieldSize->req_docid)) {
+      $maxLen = intval($fieldSize->req_docid);
+    }
+  }
+
+  $docId = trim((string)$docId);
+  if (function_exists('trim_and_limit')) {
+    return trim_and_limit($docId, $maxLen);
+  }
+
+  return substr($docId, 0, $maxLen);
 }
 
 
@@ -197,6 +216,9 @@ function ws_collect_diagram_step_names($diagNode, $domXPath, $nodeNameById)
 
 function ws_transform_xmi_to_tl_workspace($xmi, &$report)
 {
+  if (is_object($report)) {
+    $report->detectedSteps = array();
+  }
   // Build a minimal tl_workspace document according to schema v1.0
   $doc = new DOMDocument('1.0', 'UTF-8');
   $doc->formatOutput = true;
@@ -364,12 +386,24 @@ function ws_transform_xmi_to_tl_workspace($xmi, &$report)
         $stepNames = array('Execute path: ' . $dName);
       }
 
+      // Record detected steps in the report for later display
+      if (is_object($report)) {
+        $report->detectedSteps[] = array(
+          'suite' => $ucName,
+          'testcase' => $dName,
+          'steps' => $stepNames
+        );
+      }
+
       foreach ($stepNames as $idx => $stepName) {
         $stepEl = $doc->createElement('step');
         $stepEl->setAttribute('step_number', (string)($idx + 1));
         $stepEl->appendChild($doc->createElement('actions', htmlspecialchars($stepName)));
         $stepEl->appendChild($doc->createElement('expectedresults', htmlspecialchars('Se completa correctamente: ' . $stepName)));
         $stepsEl->appendChild($stepEl);
+        if (is_object($report)) {
+          $report->metrics->stepsDetected++;
+        }
       }
       $tcase->appendChild($stepsEl);
 
@@ -577,6 +611,16 @@ function ws_handle_upload_and_process(&$db, $args)
         'testsuites' => $gdoc->getElementsByTagName('testsuite')->length,
         'testcases' => $gdoc->getElementsByTagName('testcase')->length,
       );
+      // Sync numeric detected metrics so the "Detected" summary matches the transformed XML
+      if (is_object($report) && isset($report->transformedSummary)) {
+        $report->metrics->requirementsDetected = intval($report->transformedSummary['requirements']);
+        $report->metrics->suitesDetected = intval($report->transformedSummary['testsuites']);
+        $report->metrics->testcasesDetected = intval($report->transformedSummary['testcases']);
+        // If steps were not counted during transform, derive from XML
+        if (empty($report->metrics->stepsDetected)) {
+          $report->metrics->stepsDetected = $gdoc->getElementsByTagName('step')->length;
+        }
+      }
     }
     @unlink($dest);
     return $report;
@@ -586,6 +630,29 @@ function ws_handle_upload_and_process(&$db, $args)
   if ($model === null || !$report->isValid) {
     @unlink($dest);
     return $report;
+  }
+
+  // Collect detected step names from validated model for reporting
+  if (is_object($report) && !isset($report->detectedSteps)) {
+    $report->detectedSteps = array();
+    $report->metrics->stepsDetected = 0;
+    if (isset($model->suites) && is_array($model->suites)) {
+      foreach ($model->suites as $suite) {
+        $sname = isset($suite->name) ? $suite->name : '';
+        if (!isset($suite->testcases) || !is_array($suite->testcases)) continue;
+        foreach ($suite->testcases as $tc) {
+          $tname = isset($tc->name) ? $tc->name : '';
+          $stepNames = array();
+          if (isset($tc->steps) && is_array($tc->steps)) {
+            foreach ($tc->steps as $s) {
+              if (isset($s['actions'])) $stepNames[] = $s['actions'];
+              $report->metrics->stepsDetected++;
+            }
+          }
+          $report->detectedSteps[] = array('suite' => $sname, 'testcase' => $tname, 'steps' => $stepNames);
+        }
+      }
+    }
   }
 
   if ($args->mode === 'dry-run') {
@@ -676,7 +743,7 @@ function ws_validate_and_build_model($xml, &$report)
     foreach ($reqNodes as $rIdx => $reqNode) {
       $rPath = $path . '/requirement[' . ($rIdx + 1) . ']';
       $reqKey = trim(ws_attr($reqNode, 'reqKey'));
-      $docId = trim(ws_child_text($reqNode, 'docId', ''));
+      $docId = ws_normalize_requirement_doc_id(ws_child_text($reqNode, 'docId', ''));
       $title = trim(ws_child_text($reqNode, 'title', ''));
       $desc = ws_child_text($reqNode, 'description', '');
       $status = strtoupper(trim(ws_child_text($reqNode, 'status', TL_REQ_STATUS_VALID)));
@@ -1103,7 +1170,8 @@ function ws_upsert_requirement_spec(&$reqSpecMgr, $tprojectId, $userId, $spec, &
 
 function ws_upsert_requirement(&$reqMgr, $tprojectId, $specId, $userId, $req, &$report)
 {
-  $existing = $reqMgr->getByDocID($req->docId, $tprojectId, null, array('access_key' => 'id', 'output' => 'minimun'));
+  $docId = ws_normalize_requirement_doc_id($req->docId);
+  $existing = $reqMgr->getByDocID($docId, $tprojectId, null, array('access_key' => 'id', 'output' => 'minimun'));
 
   if (!is_null($existing) && count($existing) > 0) {
     $reqId = intval(array_keys($existing)[0]);
@@ -1122,7 +1190,7 @@ function ws_upsert_requirement(&$reqMgr, $tprojectId, $specId, $userId, $req, &$
       return -1;
     }
 
-    $op = $reqMgr->update($reqId, intval($last['id']), $req->docId, $req->title,
+    $op = $reqMgr->update($reqId, intval($last['id']), $docId, $req->title,
                           $req->description, $userId, $req->status, $req->type,
                           1, 0, $tprojectId, 0, false);
     if ($op['status_ok']) {
@@ -1135,12 +1203,30 @@ function ws_upsert_requirement(&$reqMgr, $tprojectId, $specId, $userId, $req, &$
     return -1;
   }
 
-  $op = $reqMgr->create($specId, $req->docId, $req->title, $req->description,
+  $op = $reqMgr->create($specId, $docId, $req->title, $req->description,
                         $userId, $req->status, $req->type, 1, 0, $tprojectId);
 
   if ($op['status_ok']) {
     $report->metrics->requirementsCreated++;
     return intval($op['id']);
+  }
+
+  // If create fails because requirement already exists, try to find and update it
+  if (stripos($op['msg'], 'duplicate') !== false || stripos($op['msg'], 'unique') !== false) {
+    // Search directly in DB using SQL since getByDocID fails on duplicates
+    if (!is_null($existing) && count($existing) > 0) {
+      $reqId = intval(array_keys($existing)[0]);
+      $last = $reqMgr->get_last_version_info($reqId, array('output' => 'id,version'));
+      if (!is_null($last) && isset($last['id'])) {
+        $upd = $reqMgr->update($reqId, intval($last['id']), $docId, $req->title,
+                               $req->description, $userId, $req->status, $req->type,
+                               1, 0, $tprojectId, 0, false);
+        if ($upd['status_ok']) {
+          $report->metrics->requirementsUpdated++;
+          return $reqId;
+        }
+      }
+    }
   }
 
   ws_add_issue($report, 'RQ3-012', 'ERROR', '/requirements/' . $req->reqKey,
@@ -1219,6 +1305,7 @@ function ws_upsert_testcase(&$db, &$treeMgr, &$tcaseMgr, $nodeTypes, $tprojectId
                             testcase::DEFAULT_ORDER, $tc->executionType, $tc->importance);
     if ($op['status_ok']) {
       $report->metrics->testcasesUpdated++;
+      $report->metrics->stepsUpdated += count($tc->steps);
     } else {
       ws_add_issue($report, 'TC4-010', 'ERROR', '/testcase/' . $tc->caseKey,
                    'Failed to update testcase: ' . $op['msg']);
@@ -1236,6 +1323,7 @@ function ws_upsert_testcase(&$db, &$treeMgr, &$tcaseMgr, $nodeTypes, $tprojectId
                                 testcase::DEFAULT_ORDER, $tc->executionType, $tc->importance);
         if ($op['status_ok']) {
           $report->metrics->testcasesUpdated++;
+          $report->metrics->stepsUpdated += count($tc->steps);
         } else {
           ws_add_issue($report, 'TC4-010', 'ERROR', '/testcase/' . $tc->caseKey,
                        'Failed to update testcase by name: ' . $op['msg']);
@@ -1251,6 +1339,7 @@ function ws_upsert_testcase(&$db, &$treeMgr, &$tcaseMgr, $nodeTypes, $tprojectId
           $tcId = intval($op['id']);
           $tcVersionId = intval($op['tcversion_id']);
           $report->metrics->testcasesCreated++;
+          $report->metrics->stepsCreated += count($tc->steps);
         } else {
           ws_add_issue($report, 'TC4-010', 'ERROR', '/testcase/' . $tc->caseKey,
                        'Failed to create testcase after unresolved latest version by name: ' . $op['msg']);
@@ -1267,6 +1356,7 @@ function ws_upsert_testcase(&$db, &$treeMgr, &$tcaseMgr, $nodeTypes, $tprojectId
         $tcId = intval($op['id']);
         $tcVersionId = intval($op['tcversion_id']);
         $report->metrics->testcasesCreated++;
+        $report->metrics->stepsCreated += count($tc->steps);
       } else {
         ws_add_issue($report, 'TC4-010', 'ERROR', '/testcase/' . $tc->caseKey,
                      'Failed to create testcase: ' . $op['msg']);
@@ -1513,6 +1603,7 @@ function ws_new_report($mode, $tprojectId)
   $report->metrics->requirementsDetected = 0;
   $report->metrics->suitesDetected = 0;
   $report->metrics->testcasesDetected = 0;
+  $report->metrics->stepsDetected = 0;
   $report->metrics->traceLinksDetected = 0;
 
   $report->metrics->requirementSpecsCreated = 0;
@@ -1523,6 +1614,8 @@ function ws_new_report($mode, $tprojectId)
   $report->metrics->suitesUpdated = 0;
   $report->metrics->testcasesCreated = 0;
   $report->metrics->testcasesUpdated = 0;
+  $report->metrics->stepsCreated = 0;
+  $report->metrics->stepsUpdated = 0;
   $report->metrics->traceabilityLinked = 0;
   $report->metrics->traceabilityFailed = 0;
 
@@ -1599,22 +1692,34 @@ function ws_render_page($args, $report)
   if (!is_null($report)) {
     echo '<h3>Import Report</h3>';
     echo '<p class="hint"><strong>Status:</strong> ' . htmlspecialchars(isset($report->status) ? $report->status : 'n/a') . '</p>';
-    echo '<p class="hint"><strong>Detected:</strong> requirements ' . intval($report->metrics->requirementsDetected) . ' &nbsp; testsuites ' . intval($report->metrics->suitesDetected) . ' &nbsp; testcases ' . intval($report->metrics->testcasesDetected) . ' &nbsp; trace links ' . intval($report->metrics->traceLinksDetected) . '</p>';
-    echo '<p class="hint"><strong>Created/updated:</strong> requirement specs ' . intval($report->metrics->requirementSpecsCreated + $report->metrics->requirementSpecsUpdated) . ' &nbsp; requirements ' . intval($report->metrics->requirementsCreated + $report->metrics->requirementsUpdated) . ' &nbsp; suites ' . intval($report->metrics->suitesCreated + $report->metrics->suitesUpdated) . ' &nbsp; testcases ' . intval($report->metrics->testcasesCreated + $report->metrics->testcasesUpdated) . ' &nbsp; linked traceability ' . intval($report->metrics->traceabilityLinked) . '</p>';
+    echo '<p class="hint"><strong>Detected:</strong> requirements ' . intval($report->metrics->requirementsDetected) . ' &nbsp; testsuites ' . intval($report->metrics->suitesDetected) . ' &nbsp; testcases ' . intval($report->metrics->testcasesDetected) . ' &nbsp; steps ' . intval($report->metrics->stepsDetected) . ' &nbsp; trace links ' . intval($report->metrics->traceLinksDetected) . '</p>';
+    echo '<p class="hint"><strong>Created/updated:</strong> requirements ' . intval($report->metrics->requirementsCreated + $report->metrics->requirementsUpdated) . ' &nbsp; testsuites ' . intval($report->metrics->suitesCreated + $report->metrics->suitesUpdated) . ' &nbsp; testcases ' . intval($report->metrics->testcasesCreated + $report->metrics->testcasesUpdated) . ' &nbsp; steps ' . intval($report->metrics->stepsCreated + $report->metrics->stepsUpdated) . ' &nbsp; trace links ' . intval($report->metrics->traceabilityLinked) . '</p>';
     echo '<p class="hint"><strong>Warnings/Errors:</strong> ' . intval($report->totalsBySeverity['WARN']) . ' warnings, ' . intval($report->totalsBySeverity['ERROR']) . ' errors</p>';
+
+    // Detected steps count is available in report->metrics->stepsDetected
 
     if (intval($report->totalsBySeverity['ERROR']) > 0) {
       $friendlyMessage = 'El archivo no se ha podido procesar porque el formato no es el esperado.';
+      $errorList = array();
       foreach ($report->issues as $issue) {
         if (!isset($issue['severity']) || $issue['severity'] !== 'ERROR') {
           continue;
         }
+        $errorList[] = $issue;
         if (isset($issue['code']) && $issue['code'] === 'WSP-054') {
           $friendlyMessage = 'El formato del archivo no es el esperado. Sube un archivo .xml válido.';
           break;
         }
       }
       echo '<p class="hint" style="color:#8a1f11;font-weight:bold;">' . htmlspecialchars($friendlyMessage) . '</p>';
+      // DEBUG: Show actual errors for troubleshooting
+      if (!empty($errorList)) {
+        echo '<p class="hint" style="color:#666;font-size:0.9em;"><strong>Errores detectados (' . count($errorList) . '):</strong><br>';
+        foreach ($errorList as $err) {
+          echo '• [' . htmlspecialchars($err['code']) . '] ' . htmlspecialchars($err['path']) . ': ' . htmlspecialchars($err['message']) . '<br>';
+        }
+        echo '</p>';
+      }
     }
 
     if (!is_null($report->generatedXml)) {
